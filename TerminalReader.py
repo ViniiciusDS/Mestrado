@@ -1,4 +1,6 @@
 import serial
+import threading
+import sys
 
 class TerminalReader:
     def __init__(self, port, baudrate=115200, timeout=1):
@@ -9,6 +11,7 @@ class TerminalReader:
         self.baudrate = baudrate
         self.timeout = timeout
         self.connection = None
+        self.running = True  # Controla o loop principal
 
     def connect(self):
         """
@@ -60,12 +63,47 @@ class TerminalReader:
             self.connection.close()
             print("Conexão serial encerrada.")
 
+    def stop(self):
+        """
+        Interrompe a execução do programa.
+        """
+        self.running = False
+
+
+# Função para monitorar o "botão de segurança"
+def monitorar_botao(terminal):
+    print("Pressione 'q' e Enter para encerrar o programa a qualquer momento.")
+    while terminal.running:
+        comando = input()
+        if comando.lower() == 'q':
+            terminal.stop()
+            print("Encerrando por comando do botão de segurança...")
+            break
+
+
 # Exemplo de uso:
 if __name__ == "__main__":
-    terminal = TerminalReader(port='COM3')  # Substitua COM3 pela porta apropriada
+    print("Configuração da porta serial:")
+    porta = input("Insira o nome da porta (ex.: COM3): ").strip()
+    try:
+        baudrate = int(input("Insira o baudrate (ex.: 115200): ").strip())
+        timeout = float(input("Insira o timeout em segundos (ex.: 1): ").strip())
+    except ValueError:
+        print("Valores inválidos! Usando configurações padrão (COM3, 115200, timeout 1s).")
+        porta = "COM3"
+        baudrate = 115200
+        timeout = 1
+
+    terminal = TerminalReader(port=porta, baudrate=baudrate, timeout=timeout)
+
     if terminal.connect():
+        # Iniciar monitoramento do botão de segurança em uma thread separada
+        botao_thread = threading.Thread(target=monitorar_botao, args=(terminal,))
+        botao_thread.daemon = True  # Thread será finalizada quando o programa principal encerrar
+        botao_thread.start()
+
         try:
-            while True:
+            while terminal.running:
                 distancia = terminal.read_distance()
                 if distancia is not None:
                     print(f"Distância medida: {distancia} metros")
