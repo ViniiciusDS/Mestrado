@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 from TerminalReader import TerminalReader
 
@@ -72,30 +73,27 @@ class TWRCalibration:
         return edm
 
 
-# Teste local do módulo
 if __name__ == "__main__":
-    print("Configuração da porta serial para calibração TWR:")
-    porta = input("Insira o nome da porta (ex.: COM3): ").strip()
-    try:
-        baudrate = int(input("Insira o baudrate (ex.: 115200): ").strip())
-        timeout = float(input("Insira o timeout em segundos (ex.: 1): ").strip())
-    except ValueError:
-        print("Valores inválidos! Usando configurações padrão (COM3, 115200, timeout 1s).")
-        porta = "COM3"
-        baudrate = 115200
-        timeout = 1
+    # Receber parâmetros da linha de comando
+    if len(sys.argv) < 4:
+        print("Uso: TWRCalibration.py <porta> <baudrate> <timeout>")
+        sys.exit(1)
 
-    num_devices = int(input("Quantos dispositivos estão em uso (tags + âncoras)? ").strip())
+    porta = sys.argv[1]
+    baudrate = int(sys.argv[2])
+    timeout = float(sys.argv[3])
 
     terminal = TerminalReader(port=porta, baudrate=baudrate, timeout=timeout)
 
     if terminal.connect():
         calibration = TWRCalibration(terminal=terminal, num_estimates=200)
         try:
-            edm = calibration.run(num_devices=num_devices)
+            edm = calibration.run(num_devices=4)  # Número de dispositivos fixado para teste local
             if edm is not None:
                 print("Calibração concluída com sucesso.")
         except KeyboardInterrupt:
             print("\nFinalizando...")
         finally:
             terminal.close()
+    else:
+        print("Não foi possível estabelecer conexão com a porta. Verifique os parâmetros.")
