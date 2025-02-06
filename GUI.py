@@ -2,21 +2,23 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import serial.tools.list_ports
 import subprocess
+import threading
 
 class GUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Interface de Testes - Projeto")
         self.geometry("800x600")
-        self.current_test = None
         self.setup_ui()
 
     def setup_ui(self):
+        """Configura a interface gráfica"""
+
         # Título
         tk.Label(self, text="Software de Testes de Campo", font=("Helvetica", 16)).pack(pady=10)
 
         # Portas COM
-        com_frame = tk.LabelFrame(self, text="Portas COM")
+        com_frame = tk.LabelFrame(self, text="Portas COM Disponíveis")
         com_frame.pack(pady=10, fill=tk.X, padx=10)
 
         tk.Label(com_frame, text="Selecionar Porta:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -36,12 +38,13 @@ class GUI(tk.Tk):
             "Teste Completo (APS014)", 
             "TWR Calibration", 
             "Candidate Delay Generator", 
-            "Candidate Evaluator"
+            "Candidate Evaluator",
+            "TerminalReader"
         ]
         self.test_selector.grid(row=0, column=1, padx=5, pady=5)
         self.test_selector.bind("<<ComboboxSelected>>", self.display_parameters)
 
-        # Parâmetros Dinâmicos
+        # Parâmetros de Entrada
         self.params_frame = tk.LabelFrame(self, text="Parâmetros de Entrada")
         self.params_frame.pack(pady=10, fill=tk.X, padx=10)
 
@@ -55,14 +58,14 @@ class GUI(tk.Tk):
         tk.Button(button_frame, text="Limpar Logs", command=self.clear_logs).pack(side=tk.LEFT, padx=5)
 
         # Área de Logs
-        logs_frame = tk.LabelFrame(self, text="Logs")
+        logs_frame = tk.LabelFrame(self, text="Logs de Execução")
         logs_frame.pack(pady=10, fill=tk.BOTH, expand=True, padx=10)
 
         self.logs_text = tk.Text(logs_frame, wrap="word", height=15)
         self.logs_text.pack(pady=5, fill=tk.BOTH, expand=True)
 
     def update_com_ports(self):
-        """Atualiza a lista de portas COM disponíveis."""
+        """Atualiza a lista de portas COM disponíveis"""
         ports = serial.tools.list_ports.comports()
         com_list = [f"{port.device} - {port.description}" for port in ports]
         self.com_list["values"] = com_list
@@ -70,7 +73,7 @@ class GUI(tk.Tk):
             self.com_list.current(0)
 
     def display_parameters(self, event):
-        """Exibe os parâmetros específicos para o teste selecionado."""
+        """Exibe os parâmetros específicos para o teste selecionado"""
         for widget in self.param_widgets:
             widget.destroy()
         self.param_widgets = []
@@ -93,9 +96,13 @@ class GUI(tk.Tk):
             self.add_parameter("Número de Iterações", "100")
         elif selected_test == "Candidate Evaluator":
             self.add_parameter("Erro Máximo Aceitável", "1e-6")
+        elif selected_test == "TerminalReader": 
+            self.add_parameter("Porta COM", "COM3")
+            self.add_parameter("Baudrate", "115200")
+            self.add_parameter("Timeout (s)", "1")
 
     def add_parameter(self, label, default_value):
-        """Adiciona um campo para entrada de parâmetro."""
+        """Adiciona um campo para entrada de parâmetro"""
         row = len(self.param_widgets) // 2
         label_widget = tk.Label(self.params_frame, text=label)
         label_widget.grid(row=row, column=0, padx=5, pady=5, sticky="w")
@@ -106,32 +113,61 @@ class GUI(tk.Tk):
         self.param_widgets.append(entry_widget)
 
     def run_test(self):
-        """Executa o teste selecionado."""
+        """Executa o teste selecionado e trata falhas de conexão."""
         selected_test = self.test_selector.get()
         params = [widget.get() for widget in self.param_widgets if isinstance(widget, tk.Entry)]
         self.log(f"Executando: {selected_test} com parâmetros: {params}")
 
+        # Executar TerminalReader em uma thread separada para evitar travamentos
+        if selected_test == "TerminalReader":
+            threading.Thread(target=self.run_terminal_reader, args=(params,)).start()
+            return
+
         try:
             if selected_test == "Teste Completo (APS014)":
-                subprocess.run(["python", "APS014.py"] + params, check=True)
+                result = subprocess.run(["python", "APS014.py"] + params, check=True)
             elif selected_test == "TWR Calibration":
-                subprocess.run(["python", "TWRCalibration.py"] + params, check=True)
+                result = subprocess.run(["python", "TWRCalibration.py"] + params, check=True)
             elif selected_test == "Candidate Delay Generator":
                 subprocess.run(["python", "CandidateDelayGenerator.py"] + params, check=True)
             elif selected_test == "Candidate Evaluator":
                 subprocess.run(["python", "CandidateEvaluator.py"] + params, check=True)
-            self.log("Teste executado com sucesso!")
+
+            print(f"DEBUG: Código de saída do teste: {result.returncode}")
+
+            if result.returncode == 1:
+                self.ask_retry()
+
         except subprocess.CalledProcessError as e:
-            self.log(f"Erro durante o teste: {e}")
-            messagebox.showerror("Erro", "Não foi possível executar o teste. Verifique as configurações.")
+            print(f"DEBUG: Erro na execução do teste: {e}")
+            self.ask_retry()
+
+    def run_terminal_reader(self, params):
+        """Executa o TerminalReader em uma thread separada."""
+        try:
+            result = subprocess.run(["python", "TerminalReader.py"] + params, check=True)
+            print(f"DEBUG: Código de saída do TerminalReader: {result.returncode}")
+
+            if result.returncode == 1:
+                self.ask_retry()
+
+        except subprocess.CalledProcessError as e:
+            print(f"DEBUG: Erro ao executar TerminalReader: {e}")
+            self.ask_retry()
+
+    def ask_retry(self):
+        """Pergunta ao usuário se deseja tentar novamente após falha de conexão"""
+        retry = messagebox.askyesno("Erro de Conexão", "Não foi possível conectar à porta COM. Deseja tentar novamente?")
+        if retry:
+            self.run_test()  # Tenta novamente o teste
 
     def log(self, message):
-        """Adiciona uma mensagem à área de logs."""
+        """Adiciona uma mensagem à área de logs"""
         self.logs_text.insert(tk.END, message + "\n")
         self.logs_text.see(tk.END)
 
     def clear_logs(self):
-        """Limpa a área de logs."""
+        """Limpa a área de logs"""
         self.logs_text.delete(1.0, tk.END)
 
 if __name__ == "__main__":

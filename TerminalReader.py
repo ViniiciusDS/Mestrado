@@ -1,5 +1,4 @@
 import serial
-import threading
 import sys
 
 class TerminalReader:
@@ -11,31 +10,26 @@ class TerminalReader:
         self.baudrate = baudrate
         self.timeout = timeout
         self.connection = None
-        self.running = True  # Controla o loop principal
 
     def connect(self):
         """
         Tenta estabelecer conexão com a porta serial.
-        Caso falhe, oferece a opção de tentar novamente ou sair.
+        Caso falhe, retorna False para que a interface possa tratar o erro.
         """
-        while True:
-            try:
-                self.connection = serial.Serial(
-                    port=self.port,
-                    baudrate=self.baudrate,
-                    timeout=self.timeout,
-                    parity=serial.PARITY_NONE,
-                    stopbits=serial.STOPBITS_ONE,
-                    bytesize=serial.EIGHTBITS
-                )
-                print(f"Conectado à porta {self.port} com baudrate {self.baudrate}.")
-                return True
-            except serial.SerialException as e:
-                print(f"Erro ao conectar na porta {self.port}: {e}")
-                retry = input("Deseja tentar novamente? (s/n): ").strip().lower()
-                if retry != 's':
-                    print("Encerrando o programa.")
-                    return False
+        try:
+            self.connection = serial.Serial(
+                port=self.port,
+                baudrate=self.baudrate,
+                timeout=self.timeout,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                bytesize=serial.EIGHTBITS
+            )
+            print(f"Conectado à porta {self.port} com baudrate {self.baudrate}.")
+            return True
+        except serial.SerialException as e:
+            print(f"Erro ao conectar na porta {self.port}: {e}")
+            return False  # Retorna False para que a interface capture
 
     def read_distance(self):
         """
@@ -51,8 +45,6 @@ class TerminalReader:
                 print("Erro ao converter os dados recebidos para número.")
             except Exception as e:
                 print(f"Erro durante a leitura: {e}")
-        else:
-            print("Conexão não estabelecida ou fechada.")
         return None
 
     def close(self):
@@ -63,51 +55,23 @@ class TerminalReader:
             self.connection.close()
             print("Conexão serial encerrada.")
 
-    def stop(self):
-        """
-        Interrompe a execução do programa.
-        """
-        self.running = False
-
-
-# Função para monitorar o "botão de segurança"
-def monitorar_botao(terminal):
-    print("Pressione 'q' e Enter para encerrar o programa a qualquer momento.")
-    while terminal.running:
-        comando = input()
-        if comando.lower() == 'q':
-            terminal.stop()
-            print("Encerrando por comando do botão de segurança...")
-            break
-
-
-# Exemplo de uso:
+# Teste local do módulo
 if __name__ == "__main__":
-    print("Configuração da porta serial:")
-    porta = input("Insira o nome da porta (ex.: COM3): ").strip()
-    try:
-        baudrate = int(input("Insira o baudrate (ex.: 115200): ").strip())
-        timeout = float(input("Insira o timeout em segundos (ex.: 1): ").strip())
-    except ValueError:
-        print("Valores inválidos! Usando configurações padrão (COM3, 115200, timeout 1s).")
-        porta = "COM3"
-        baudrate = 115200
-        timeout = 1
+    if len(sys.argv) < 4:
+        print("Uso: TerminalReader.py <porta> <baudrate> <timeout>")
+        sys.exit(1)
 
-    terminal = TerminalReader(port=porta, baudrate=baudrate, timeout=timeout)
+    port = sys.argv[1]
+    baudrate = int(sys.argv[2])
+    timeout = float(sys.argv[3])
 
-    if terminal.connect():
-        # Iniciar monitoramento do botão de segurança em uma thread separada
-        botao_thread = threading.Thread(target=monitorar_botao, args=(terminal,))
-        botao_thread.daemon = True  # Thread será finalizada quando o programa principal encerrar
-        botao_thread.start()
+    reader = TerminalReader(port, baudrate, timeout)
 
-        try:
-            while terminal.running:
-                distancia = terminal.read_distance()
-                if distancia is not None:
-                    print(f"Distância medida: {distancia} metros")
-        except KeyboardInterrupt:
-            print("\nFinalizando...")
-        finally:
-            terminal.close()
+    if reader.connect():
+        distance = reader.read_distance()
+        if distance is not None:
+            print(f"Distância lida: {distance:.2f} m")
+        reader.close()
+    else:
+        print("Erro ao conectar na porta serial.")
+        sys.exit(1)  # Retorna erro para a interface
