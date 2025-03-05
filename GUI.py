@@ -3,6 +3,9 @@ from tkinter import ttk, messagebox
 import serial.tools.list_ports
 import subprocess
 import threading
+import os
+
+print("Arquivos disponíveis no executável:", os.listdir(os.path.dirname(__file__)))
 
 class GUI(tk.Tk):
     def __init__(self):
@@ -129,9 +132,9 @@ class GUI(tk.Tk):
             elif selected_test == "TWR Calibration":
                 result = subprocess.run(["python", "TWRCalibration.py"] + params, check=True)
             elif selected_test == "Candidate Delay Generator":
-                subprocess.run(["python", "CandidateDelayGenerator.py"] + params, check=True)
+                result = subprocess.run(["python", "CandidateDelayGenerator.py"] + params, check=True)
             elif selected_test == "Candidate Evaluator":
-                subprocess.run(["python", "CandidateEvaluator.py"] + params, check=True)
+                result = subprocess.run(["python", "CandidateEvaluator.py"] + params, check=True)
 
             print(f"DEBUG: Código de saída do teste: {result.returncode}")
 
